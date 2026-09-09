@@ -2,7 +2,7 @@ name: proxmox-monitoring
 
 services:
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.159.0
+    image: docker.io/otel/opentelemetry-collector-contrib:0.159.0
     container_name: otel-collector
     ports:
     - "4317:4317"
@@ -18,7 +18,7 @@ services:
     - prometheus
 
   prometheus:
-    image: prom/prometheus:v3.14.0
+    image: docker.io/prom/prometheus:v3.14.0
     container_name: prometheus
     ports:
     - "127.0.0.1:9090:9090"
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:13.2.0
+    image: docker.io/grafana/grafana:13.2.0
     container_name: grafana
     ports:
     - "127.0.0.1:3000:3000"
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
 
   renderer:
-    image: grafana/grafana-image-renderer:v5.12.2
+    image: docker.io/grafana/grafana-image-renderer:v5.12.2
     container_name: renderer
     environment:
     - AUTH_TOKEN=${RENDERER_TOKEN:-local-render}

@@ -2,7 +2,7 @@
 
 My homelab lives on one shelf in an apartment coat closet with no airflow. I added two USB fans, pointed across the gear.
 
-To find out whether the fans were worth it, I needed numbers from before and after. This repo is the configuration that collects them: an OpenTelemetry Collector on the Proxmox node scraping Node Exporter over loopback, a second collector with Prometheus and Grafana in Docker on my workstation, dashboards generated from jsonnet, and scripts to mark a change and average the windows either side of it.
+To find out whether the fans were worth it, I needed numbers from before and after. This repo is the configuration that collects them: an OpenTelemetry Collector on the Proxmox node scraping Node Exporter over loopback, a second collector with Prometheus and Grafana in containers on my workstation, dashboards generated from jsonnet, and scripts to mark a change and average the windows either side of it.
 
 ## The coat closet
 
@@ -53,7 +53,7 @@ Proxmox node(s)
     `- PVE metric server .... cluster metrics ..... OTLP/HTTP -> :4318
                 |
                 v
-Workstation (Docker)
+Workstation (containers)
     `- OTel Collector -> Prometheus -> Grafana
 ```
 
@@ -196,6 +196,8 @@ make up
 ```
 
 **Prometheus** http://localhost:9090 | **Grafana** http://localhost:3000 (admin/admin)
+
+Both the stack and the Makefile's own tooling run in containers. The runtime defaults to `docker`; `make up CONTAINER_RUNTIME=podman` works just as well.
 
 ### 2. Install Node Exporter on each node
 

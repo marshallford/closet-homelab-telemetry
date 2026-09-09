@@ -101,7 +101,7 @@ service:
       # on a node.
       - name: service.namespace
         value: central
-      # Docker sets HOSTNAME to the container ID, so replicas are distinct
+      # The runtime sets HOSTNAME to the container ID, so replicas are distinct
       # without configuring anything per replica, and the value survives a
       # process restart. A replaced container is genuinely a new instance.
       - name: service.instance.id
