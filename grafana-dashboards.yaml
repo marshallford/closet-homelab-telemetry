@@ -1,0 +1,14 @@
+# Mounted into /etc/grafana/provisioning/dashboards/, read at startup.
+
+apiVersion: 1
+
+providers:
+- name: rendered
+  type: file
+  # Filesystem watching is unreliable over bind mounts, so keep this above 10
+  # to force polling instead. Renders appear without restarting Grafana.
+  updateIntervalSeconds: 15
+  allowUiUpdates: false
+  options:
+    path: /var/lib/grafana/dashboards
+    foldersFromFilesStructure: false

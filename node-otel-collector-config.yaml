@@ -1,0 +1,115 @@
+# COLLECTOR_ENDPOINT (host:4317) must be set in the environment.
+
+receivers:
+  host_metrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      load:
+      memory:
+      paging:
+      # zd* are ZFS zvols: guest virtual disks seen from the host. PVE already
+      # reports guest disk I/O per vmid, which is the more useful view, and
+      # these grow with every disk attached to every guest.
+      disk:
+        exclude:
+          devices:
+          - ^zd[0-9]+(p[0-9]+)?$
+          match_type: regexp
+      filesystem:
+      network:
+      processes:
+      system:
+
+  prometheus:
+    config:
+      scrape_configs:
+      - job_name: node-exporter
+        scrape_interval: 30s
+        static_configs:
+        - targets:
+          - 127.0.0.1:9100
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  resource_detection:
+    detectors:
+    - system
+    system:
+      # Default is ["dns", "os"], which resolves to an FQDN.
+      hostname_sources:
+      - os
+      # Only host.name and os.type are on by default.
+      resource_attributes:
+        host.id:
+          enabled: true
+        host.arch:
+          enabled: true
+        os.description:
+          enabled: true
+    override: false
+
+  # Identity this node knows first-hand. service.name is deliberately unset:
+  # a host is not a service. The prometheus receiver names each resource
+  # after its scrape job, which is an artifact of scraping rather than
+  # anything the host claims, so it is removed here at the source.
+  resource:
+    attributes:
+    - key: service.instance.id
+      from_attribute: host.id
+      action: upsert
+    - key: service.name
+      action: delete
+
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlp_grpc:
+    endpoint: "${env:COLLECTOR_ENDPOINT}"
+    tls:
+      insecure: true
+
+service:
+  # Push the collector's own metrics down the same path as everything else,
+  # rather than exposing :8888 for something to scrape.
+  telemetry:
+    # Self-telemetry bypasses the pipeline, so neither processor above sees
+    # it. The same identity is declared directly; systemd supplies %H and %m.
+    resource:
+      attributes:
+      - name: service.namespace
+        value: node
+      - name: service.instance.id
+        value: "${env:NODE_MACHINE_ID}"
+      - name: host.name
+        value: "${env:NODE_HOST}"
+      - name: host.id
+        value: "${env:NODE_MACHINE_ID}"
+    metrics:
+      readers:
+      - periodic:
+          # Milliseconds -- the only interval in this project not a duration.
+          interval: 30000
+          exporter:
+            otlp:
+              protocol: grpc
+              endpoint: "http://${env:COLLECTOR_ENDPOINT}"
+
+  pipelines:
+    metrics:
+      receivers:
+      - host_metrics
+      - prometheus
+      processors:
+      - memory_limiter
+      - resource_detection
+      - resource
+      - batch
+      exporters:
+      - otlp_grpc

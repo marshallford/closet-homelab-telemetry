@@ -1,0 +1,16 @@
+# Mounted into /etc/grafana/provisioning/datasources/, read at startup.
+
+apiVersion: 1
+
+datasources:
+- name: Prometheus
+  uid: prometheus
+  type: prometheus
+  access: proxy
+  url: http://prometheus:9090
+  isDefault: true
+  # Matches the collection interval, so $__rate_interval is computed sanely.
+  jsonData:
+    timeInterval: 30s
+    httpMethod: POST
+  editable: false

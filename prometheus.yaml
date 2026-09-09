@@ -1,0 +1,2 @@
+# Overrides the image default, which scrapes Prometheus itself.
+# No scrape_configs: everything arrives by remote write.

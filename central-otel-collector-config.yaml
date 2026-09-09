@@ -1,0 +1,131 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # hwmon metadata: label/name lookup tables for the chip and sensor that
+  # hw.id already composes.
+  filter/metadata:
+    error_mode: ignore
+    metrics:
+      metric:
+      - 'name == "node_hwmon_sensor_label"'
+      - 'name == "node_hwmon_chip_names"'
+
+  # These describe the scrape rather than the machine. Dropping them loses
+  # nothing: up still reports whether the target is alive, and collector health
+  # comes from otelcol_* self-telemetry.
+  filter/scaffolding:
+    error_mode: ignore
+    metrics:
+      metric:
+      - 'IsMatch(name, "^node_scrape_collector_")'
+      - 'IsMatch(name, "^scrape_")'
+
+  # Hardware reports unset thresholds as out-of-range markers rather than
+  # omitting them: absolute zero for a minimum, five figures for a maximum.
+  filter/sentinels:
+    error_mode: ignore
+    metrics:
+      datapoint:
+      - 'IsMatch(metric.name, "^node_hwmon_temp_") and value_double <= -273'
+      - 'IsMatch(metric.name, "^node_hwmon_temp_") and value_double >= 1000'
+
+  transform/semconv:
+    error_mode: ignore
+    metric_statements:
+    # PVE is not configurable, so its host identity is normalized here. Nodes
+    # declare their own identity, which is why nothing else is set.
+    - context: resource
+      statements:
+      - 'set(attributes["host.name"], attributes["proxmox.node"]) where attributes["proxmox.node"] != nil'
+
+    # PVE repeats the resource-level proxmox.node on every datapoint.
+    - context: datapoint
+      statements:
+      - 'delete_key(attributes, "node") where resource.attributes["proxmox.node"] != nil'
+
+    # hwmon -> hw.* attributes. Runs before the rename below, which is why
+    # these match on the original metric name.
+    - context: datapoint
+      statements:
+      - 'set(attributes["hw.id"], Concat(["hwmon", attributes["chip"], attributes["sensor"]], "/")) where IsMatch(metric.name, "^node_hwmon_(temp_(celsius|max_celsius|crit_celsius|min_celsius)|power_watt)$")'
+      - 'set(attributes["hw.sensor_location"], attributes["sensor"]) where IsMatch(metric.name, "^node_hwmon_(temp_(celsius|max_celsius|crit_celsius|min_celsius)|power_watt)$")'
+      - 'set(attributes["hw.type"], "temperature") where IsMatch(metric.name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|min_celsius)$")'
+      - 'set(attributes["hw.limit_type"], "high.degraded") where metric.name == "node_hwmon_temp_max_celsius"'
+      - 'set(attributes["hw.limit_type"], "high.critical") where metric.name == "node_hwmon_temp_crit_celsius"'
+      - 'set(attributes["hw.limit_type"], "low.degraded") where metric.name == "node_hwmon_temp_min_celsius"'
+      - 'delete_key(attributes, "chip") where attributes["hw.id"] != nil'
+      - 'delete_key(attributes, "sensor") where attributes["hw.id"] != nil'
+
+    # hwmon -> hw.* metric names and units.
+    - context: metric
+      statements:
+      - 'set(unit, "Cel") where IsMatch(name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|min_celsius)$")'
+      - 'set(name, "hw.temperature") where name == "node_hwmon_temp_celsius"'
+      - 'set(name, "hw.temperature.limit") where IsMatch(name, "^node_hwmon_temp_(max|crit|min)_celsius$")'
+      # Package power. semconv marks hw.type required for hw.power, but hwmon
+      # does not say what component a sensor belongs to, so it is left unset
+      # rather than guessed.
+      - 'set(unit, "W") where name == "node_hwmon_power_watt"'
+      - 'set(name, "hw.power") where name == "node_hwmon_power_watt"'
+
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  prometheus_remote_write:
+    endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  # Self-telemetry is emitted by the service layer, not a receiver, so it
+  # bypasses this collector's own pipeline. Push it back into the OTLP
+  # receiver so it takes the same path to Prometheus as everything else.
+  telemetry:
+    resource:
+      attributes:
+      # Both tiers run otelcol-contrib, so the namespace is what separates
+      # them: job becomes central/otelcol-contrib here, node/otelcol-contrib
+      # on a node.
+      - name: service.namespace
+        value: central
+      # Docker sets HOSTNAME to the container ID, so replicas are distinct
+      # without configuring anything per replica, and the value survives a
+      # process restart. A replaced container is genuinely a new instance.
+      - name: service.instance.id
+        value: "${env:HOSTNAME}"
+    metrics:
+      readers:
+      - periodic:
+          # Milliseconds -- the only interval in this project not a duration.
+          interval: 30000
+          exporter:
+            otlp:
+              protocol: grpc
+              endpoint: http://localhost:4317
+
+  pipelines:
+    metrics:
+      receivers:
+      - otlp
+      processors:
+      - memory_limiter
+      - filter/metadata
+      - filter/scaffolding
+      - filter/sentinels
+      - transform/semconv
+      - batch
+      exporters:
+      - prometheus_remote_write
