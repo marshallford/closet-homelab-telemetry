@@ -189,6 +189,8 @@ make compare COMPARE_SETTLE=0.5  # skip 30 minutes of settling after the change
 
 ## Setup
 
+Both the stack and the Makefile's own tooling run in containers; the runtime defaults to `docker`, and `make up CONTAINER_RUNTIME=podman` works just as well. On the host itself only `curl` and `jq` are needed, by `make compare`, `make annotate` and `make screenshots`.
+
 ### 1. Start the workstation stack
 
 ```shell
@@ -196,8 +198,6 @@ make up
 ```
 
 **Prometheus** http://localhost:9090 | **Grafana** http://localhost:3000 (admin/admin)
-
-Both the stack and the Makefile's own tooling run in containers. The runtime defaults to `docker`; `make up CONTAINER_RUNTIME=podman` works just as well.
 
 ### 2. Install Node Exporter on each node
 
@@ -207,7 +207,7 @@ NODE=<node-address>
 ssh root@$NODE "apt-get update && apt-get install -y prometheus-node-exporter"
 
 ssh root@$NODE "mkdir -p /etc/systemd/system/prometheus-node-exporter.service.d"
-scp node-exporter-listen.conf \
+scp config/node/node-exporter-listen.conf \
     root@$NODE:/etc/systemd/system/prometheus-node-exporter.service.d/listen.conf
 
 ssh root@$NODE "systemctl daemon-reload && systemctl restart prometheus-node-exporter"
@@ -230,11 +230,11 @@ DEB=otelcol-contrib_${VERSION}_linux_amd64.deb
 
 ssh root@$NODE "cd /tmp && wget -q https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$VERSION/$DEB && dpkg -i $DEB && rm $DEB"
 
-scp node-otel-collector-config.yaml root@$NODE:/etc/otelcol-contrib/config.yaml
+scp config/node/otel-collector.yaml root@$NODE:/etc/otelcol-contrib/config.yaml
 
 # The config reads COLLECTOR_ENDPOINT from the environment.
 ssh root@$NODE "mkdir -p /etc/systemd/system/otelcol-contrib.service.d"
-scp otelcol-endpoint.conf root@$NODE:/etc/systemd/system/otelcol-contrib.service.d/endpoint.conf
+scp config/node/otelcol-endpoint.conf root@$NODE:/etc/systemd/system/otelcol-contrib.service.d/endpoint.conf
 ssh root@$NODE "echo COLLECTOR_ENDPOINT=$COLLECTOR:4317 > /etc/otelcol-contrib/endpoint.env"
 
 ssh root@$NODE "systemctl daemon-reload && systemctl restart otelcol-contrib"

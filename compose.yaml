@@ -8,7 +8,7 @@ services:
     - "4317:4317"
     - "4318:4318"
     volumes:
-    - ./central-otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    - ./config/workstation/otel-collector.yaml:/etc/otel-collector-config.yaml:ro,z
     command:
     - "--config=/etc/otel-collector-config.yaml"
     networks:
@@ -23,7 +23,7 @@ services:
     ports:
     - "127.0.0.1:9090:9090"
     volumes:
-    - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+    - ./config/workstation/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro,z
     - prometheus_data:/prometheus
     command:
     - '--config.file=/etc/prometheus/prometheus.yaml'
@@ -47,9 +47,9 @@ services:
     - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
     - grafana_data:/var/lib/grafana
-    - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/prometheus.yaml:ro
-    - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/rendered.yaml:ro
-    - ./dashboards/rendered:/var/lib/grafana/dashboards:ro
+    - ./config/workstation/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/prometheus.yaml:ro,z
+    - ./config/workstation/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/rendered.yaml:ro,z
+    - ./dashboards/rendered:/var/lib/grafana/dashboards:ro,z
     networks:
     - monitoring
     depends_on:
