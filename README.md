@@ -36,7 +36,7 @@ The Elite Mini runs Proxmox VE, so it's a hypervisor with a handful of VMs on it
 | medium -> high | -0.15 °C | -0.07 |
 | off -> high | -4.76 °C | -0.26 |
 
-![Eight hwmon readings over eighteen hours: a flat band near 67 °C, a step down at 17:00, then a lower band near 62 °C that does not move when the fans go to high at 22:30](docs/images/host-overview-temperature-by-sensor.png)
+![Eight hwmon readings over twenty-five hours: a flat band near 67 °C, a step down at 17:00, then a lower band near 62 °C that does not move when the fans go to high at 22:30](docs/images/host-overview-temperature-by-sensor.png)
 
 Medium takes about 4.5 °C off the hottest sensor. High adds nothing on top of it: two untouched windows drift by ±0.4 °C on their own, so -0.15 °C is not a result. CPU load was identical across every window, so this is cooling rather than a quieter machine.
 
@@ -126,11 +126,11 @@ Every host metric carries `host.name`, `host.id`, and `os.type`, so the three so
 
 Two are provisioned. **Host Overview** covers OS-level metrics and hwmon sensors:
 
-![Host Overview: uptime, CPU busy, memory, load, hottest sensor and package power as stat tiles, then CPU by state, memory by state, load average, temperature by sensor, degrees per watt, disk I/O, filesystem and network](docs/images/host-overview.png)
+![Host Overview: a row of stat tiles across the top, then time series grouped into compute, thermal, and storage and network rows](docs/images/host-overview.png)
 
 **Proxmox Overview** covers node, guest and storage state:
 
-![Proxmox Overview: node uptime, CPU, memory, ZFS ARC and guest counts, then CPU, memory, disk and network broken out per guest](docs/images/proxmox-overview.png)
+![Proxmox Overview: node stat tiles across the top, then time series grouped into guests, guest I/O, and node and storage rows](docs/images/proxmox-overview.png)
 
 Both appear on first start -- there is nothing to import.
 

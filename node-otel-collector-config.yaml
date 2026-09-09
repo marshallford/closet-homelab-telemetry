@@ -6,7 +6,14 @@ receivers:
     scrapers:
       cpu:
       load:
+      # system.memory.usage states do not sum to a total: reclaimable slab is
+      # already inside cached, and used is derived from MemAvailable rather than
+      # from the other states. system.memory.limit is MemTotal, what free and
+      # PVE both report.
       memory:
+        metrics:
+          system.memory.limit:
+            enabled: true
       paging:
       # zd* are ZFS zvols: guest virtual disks seen from the host. PVE already
       # reports guest disk I/O per vmid, which is the more useful view, and

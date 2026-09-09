@@ -27,12 +27,12 @@ local cpuBusy =
 
 local memoryUsed =
   lib.stat('Memory used', 'percentunit', [
-    lib.q('sum(system_memory_usage_bytes{host_name="$host", state="used"}) / scalar(sum(system_memory_usage_bytes{host_name="$host"}))', 'used'),
+    lib.q('sum(system_memory_usage_bytes{host_name="$host", state="used"}) / scalar(system_memory_limit_bytes{host_name="$host"})', 'used'),
   ])
   + lib.grades(0.8, 0.95);
 
 local totalMemory =
-  lib.stat('Total memory', 'bytes', [lib.q('sum(system_memory_usage_bytes{host_name="$host"})', 'total')])
+  lib.stat('Total memory', 'bytes', [lib.q('system_memory_limit_bytes{host_name="$host"}', 'total')])
   + lib.plain('text')
   + lib.noTrend;
 
@@ -49,7 +49,7 @@ local cpuTime =
 
 local memory =
   lib.ts('Memory by state', 'bytes', [
-    lib.q('sum by (state) (system_memory_usage_bytes{host_name="$host"})', '{{state}}'),
+    lib.q('sum by (state) (system_memory_usage_bytes{host_name="$host", state!~"slab.*"})', '{{state}}'),
   ])
   + lib.stacked;
 
