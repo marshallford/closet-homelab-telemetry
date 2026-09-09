@@ -1,4 +1,4 @@
-# Cooling a closet homelab: OpenTelemetry -> Prometheus -> Grafana
+# Cooling a closet homelab
 
 My homelab lives on one shelf in an apartment coat closet with no airflow. I added two USB fans, pointed across the gear.
 
@@ -31,7 +31,7 @@ The Elite Mini runs Proxmox VE, so it's a hypervisor with a handful of VMs on it
 ## The result
 
 | change | hottest sensor | degrees per watt |
-|--------|----------------|------------------|
+|--------|---------------:|-----------------:|
 | off -> medium | **-4.46 °C** | -0.14 |
 | medium -> high | -0.15 °C | -0.07 |
 | off -> high | -4.76 °C | -0.26 |
