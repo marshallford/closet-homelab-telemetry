@@ -170,7 +170,7 @@ Changes are recorded as Grafana annotations tagged `fan`, which Host Overview dr
 
 ```shell
 make annotate ANNOTATION="fan on, medium"
-make unannotate                              # delete every annotation carrying the tag
+make unannotate                              # delete every annotation carrying the tagtanka
 ```
 
 `ANNOTATION_AT` accepts anything GNU `date -d` parses, so a change can be recorded after the fact. `ANNOTATION_UNTIL` turns the mark into a shaded region, and `ANNOTATION_TAGS` adds tags beside the one the dashboard queries:
@@ -187,14 +187,14 @@ make annotate ANNOTATION="both fans at the switch" \
 - **power (W)** -- the host's power sensor, or the one named by `COMPARE_POWER`
 - **cpu busy** -- the share of CPU time that isn't idle
 
-`COMPARE_HOST`, `COMPARE_SENSOR` and `COMPARE_POWER` are each chosen for you when the host has only one, and have to be named otherwise. Run without one to list the options. The sensor is read in both windows, so the two columns always describe the same hardware:
+`COMPARE_HOST`, `COMPARE_SENSOR` and `COMPARE_POWER` are each chosen for you when the host has only one, and have to be named otherwise. Run without one to list the options; a run also prints the values it used, so they can be copied back. Temperature sensors are named by the `hw.id` they were normalized to, power by the raw hwmon chip and sensor it kept. The sensor is read in both windows, so the two columns always describe the same hardware:
 
 ```shell
 make compare COMPARE_SENSOR=hwmon/pci0000:00_0000:00:18_3/temp1
 make compare COMPARE_SENSOR=... COMPARE_SETTLE=0.5  # skip 30 minutes of settling
 ```
 
-Windows are whole hours. Power and CPU are controls: a temperature drop only counts if both held still, or the machine was just doing less work.
+Windows are whole hours, three unless `COMPARE_WINDOW` says otherwise, and `COMPARE_AT` compares around a given time rather than the latest annotation. Power and CPU are controls: a temperature drop only counts if both held still, or the machine was just doing less work.
 
 `COMPARE_SETTLE` starts the after window later, so a temperature still on its way down is not measured as the new one. Run it once before changing anything -- two untouched windows still differ, and that gap is the bar to clear. Alternate rather than measuring once: off, medium, off, medium.
 
@@ -242,7 +242,7 @@ Use the **contrib** distribution; the base build lacks the `host_metrics` receiv
 
 ```shell
 COLLECTOR=<workstation-address>
-VERSION=0.159.0
+VERSION=0.160.0
 DEB=otelcol-contrib_${VERSION}_linux_amd64.deb
 URL=https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$VERSION
 

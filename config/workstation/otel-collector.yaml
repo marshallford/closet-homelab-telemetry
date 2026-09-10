@@ -97,9 +97,13 @@ processors:
 
 exporters:
   prometheus_remote_write:
-    endpoint: http://prometheus:9090/api/v1/write
-    resource_to_telemetry_conversion:
-      enabled: true
+    http:
+      endpoint: http://prometheus:9090/api/v1/write
+    # included: ["*"] is the documented equivalent of the deprecated
+    # resource_to_telemetry_conversion: enabled: true.
+    resource_constant_labels:
+      included:
+      - "*"
     # Sized to absorb a node collector draining its queue in a burst. Memory
     # only: a wal would need a root init container to chown the volume, and
     # Prometheus running beside this collector makes that outage unlikely.
