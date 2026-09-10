@@ -16,7 +16,7 @@ local hottest =
   + lib.grades(65, 80);
 
 local power =
-  lib.stat('Package power', 'watt', [lib.q('max by (hw_id) (hw_power_watts{host_name="$host"})', '{{hw_id}}')])
+  lib.stat('Package power', 'watt', [lib.q('max(node_hwmon_power_watt{host_name="$host"})', 'power')])
   + lib.plain('purple');
 
 local cpuBusy =
@@ -68,7 +68,11 @@ local temperature =
 
 local powerDraw =
   lib.ts('Power by sensor', 'watt', [
-    lib.q('max by (hw_id) (hw_power_watts{host_name="$host"})', '{{hw_id}}'),
+    lib.q(
+      'max by (chip, sensor) (node_hwmon_power_watt{host_name="$host"})'
+      + ' * on(chip, sensor) group_left(label) node_hwmon_sensor_label',
+      '{{label}}'
+    ),
   ])
   + lib.legendTable(['mean', 'max', 'lastNotNull'], placement='bottom');
 

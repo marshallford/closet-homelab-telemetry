@@ -12,15 +12,6 @@ processors:
     limit_mib: 512
     spike_limit_mib: 128
 
-  # hwmon metadata: label/name lookup tables for the chip and sensor that
-  # hw.id already composes.
-  filter/metadata:
-    error_mode: ignore
-    metrics:
-      metric:
-      - 'name == "node_hwmon_sensor_label"'
-      - 'name == "node_hwmon_chip_names"'
-
   # These describe the scrape rather than the machine. Dropping them loses
   # nothing: up still reports whether the target is alive, and collector health
   # comes from otelcol_* self-telemetry.
@@ -31,8 +22,9 @@ processors:
       - 'IsMatch(name, "^node_scrape_collector_")'
       - 'IsMatch(name, "^scrape_")'
 
-  # Hardware reports unset thresholds as out-of-range markers rather than
-  # omitting them: absolute zero for a minimum, five figures for a maximum.
+  # Source sanitation, not semantic conventions. Hardware reports unset
+  # thresholds as out-of-range markers rather than omitting them: absolute zero
+  # for a minimum, five figures for a maximum.
   filter/sentinels:
     error_mode: ignore
     metrics:
@@ -54,30 +46,50 @@ processors:
       statements:
       - 'delete_key(attributes, "node") where resource.attributes["proxmox.node"] != nil'
 
-    # hwmon -> hw.* attributes. Runs before the rename below, which is why
-    # these match on the original metric name.
+    # hwmon temperatures -> hw.* attributes. Runs before the rename below,
+    # which is why these match on the original metric name -- and every one is
+    # scoped to it, so native hw.temperature from a future hardware scraper
+    # passes through untouched rather than being rewritten by these.
+    #
+    # chip is a sysfs path rather than a driver name, so it distinguishes two
+    # NVMe drives where "nvme" would not. hw.name and hw.sensor_location are
+    # left unset: the driver name and the sensor label live in separate info
+    # metrics, and OTTL cannot read one metric from another. Both are
+    # currently Recommended rather than Required for hw.temperature.
     - context: datapoint
+      conditions:
+      - 'IsMatch(metric.name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|lcrit_celsius|min_celsius)$")'
       statements:
-      - 'set(attributes["hw.id"], Concat(["hwmon", attributes["chip"], attributes["sensor"]], "/")) where IsMatch(metric.name, "^node_hwmon_(temp_(celsius|max_celsius|crit_celsius|min_celsius)|power_watt)$")'
-      - 'set(attributes["hw.sensor_location"], attributes["sensor"]) where IsMatch(metric.name, "^node_hwmon_(temp_(celsius|max_celsius|crit_celsius|min_celsius)|power_watt)$")'
-      - 'set(attributes["hw.type"], "temperature") where IsMatch(metric.name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|min_celsius)$")'
-      - 'set(attributes["hw.limit_type"], "high.degraded") where metric.name == "node_hwmon_temp_max_celsius"'
+      - 'set(attributes["hw.id"], Concat(["hwmon", attributes["chip"], attributes["sensor"]], "/")) where attributes["chip"] != nil and attributes["sensor"] != nil'
+      - 'set(attributes["hw.parent"], Concat(["hwmon", attributes["chip"]], "/")) where attributes["chip"] != nil'
       - 'set(attributes["hw.limit_type"], "high.critical") where metric.name == "node_hwmon_temp_crit_celsius"'
+      - 'set(attributes["hw.limit_type"], "high.degraded") where metric.name == "node_hwmon_temp_max_celsius"'
+      - 'set(attributes["hw.limit_type"], "low.critical") where metric.name == "node_hwmon_temp_lcrit_celsius"'
       - 'set(attributes["hw.limit_type"], "low.degraded") where metric.name == "node_hwmon_temp_min_celsius"'
+      # Guarded on hw.id, not on chip and sensor themselves: statements run in
+      # order, so deleting chip first would falsify a chip != nil test on the
+      # next line and strand sensor. hw.id is set only when both were present,
+      # and nothing deletes it, so it is the stable form of the same check.
       - 'delete_key(attributes, "chip") where attributes["hw.id"] != nil'
       - 'delete_key(attributes, "sensor") where attributes["hw.id"] != nil'
 
-    # hwmon -> hw.* metric names and units.
+    # hwmon temperatures -> hw.* metric names and units.
+    #
+    # No hw.type on either: semconv defines it for hw.status, where it names
+    # what a state describes, not for the numeric temperature metrics.
+    #
+    # node_hwmon_power_watt stays source-native. hw.power does require
+    # hw.type, and hwmon does not reliably say what component a power rail
+    # measures -- on an APU the amdgpu rail includes CPU draw -- so it keeps
+    # its own name and its chip and sensor labels rather than half-claiming
+    # the convention.
     - context: metric
+      conditions:
+      - 'IsMatch(name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|lcrit_celsius|min_celsius)$")'
       statements:
-      - 'set(unit, "Cel") where IsMatch(name, "^node_hwmon_temp_(celsius|max_celsius|crit_celsius|min_celsius)$")'
+      - 'set(unit, "Cel")'
       - 'set(name, "hw.temperature") where name == "node_hwmon_temp_celsius"'
-      - 'set(name, "hw.temperature.limit") where IsMatch(name, "^node_hwmon_temp_(max|crit|min)_celsius$")'
-      # Package power. semconv marks hw.type required for hw.power, but hwmon
-      # does not say what component a sensor belongs to, so it is left unset
-      # rather than guessed.
-      - 'set(unit, "W") where name == "node_hwmon_power_watt"'
-      - 'set(name, "hw.power") where name == "node_hwmon_power_watt"'
+      - 'set(name, "hw.temperature.limit") where IsMatch(name, "^node_hwmon_temp_(max|crit|lcrit|min)_celsius$")'
 
   batch:
     timeout: 10s
@@ -130,7 +142,6 @@ service:
       - otlp
       processors:
       - memory_limiter
-      - filter/metadata
       - filter/scaffolding
       - filter/sentinels
       - transform/semconv

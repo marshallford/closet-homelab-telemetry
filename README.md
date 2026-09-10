@@ -91,7 +91,17 @@ Three rules cover most of it:
 
 - **A host is not a service.** `service.*` describes an application. The prometheus receiver names each resource after its scrape job, so the node collector deletes that `service.name`. Sources that describe themselves, like PVE and the collectors, keep theirs.
 - **Host identity.** A node declares its own `host.name`, `host.id`, and a `service.instance.id` derived from its machine ID, which survives restarts. PVE can't be configured, so the central collector copies its `proxmox.node` into `host.name` -- that's what lets PVE metrics join host metrics.
-- **Hardware sensors.** `node_hwmon_temp_celsius{chip,sensor}` becomes `hw.temperature{hw.id,hw.sensor_location}`, with `min`/`max`/`crit` as `hw.temperature.limit`. `node_hwmon_power_watt` becomes `hw.power`; power is what makes a temperature reading mean anything, since degrees per watt separates a working fan from a lighter workload.
+- **Hardware sensors.** Only temperatures are normalized. `node_hwmon_temp_celsius{chip,sensor}` becomes `hw.temperature{hw.id,hw.parent}`, with `min`/`max`/`crit`/`lcrit` as `hw.temperature.limit` and an `hw.limit_type`. Everything else hwmon reports keeps its own name.
+
+`hw.power` is not emitted. It requires `hw.type`, whose values name a component -- `cpu`, `gpu`, `power_supply` -- and hwmon does not reliably say which one a power rail measures: on this APU the `amdgpu` rail includes CPU draw. So `node_hwmon_power_watt` stays as it is, `chip` and `sensor` included, rather than half-claiming the convention.
+
+`hw.name` and `hw.sensor_location` are unset for the same family of reason. The driver name and the sensor label live in `node_hwmon_chip_names` and `node_hwmon_sensor_label`, which the transform processor cannot read from another metric. Both attributes are Recommended rather than Required, so an absent one beats an invented one -- and both info metrics are kept, so a query-time join recovers the names:
+
+```promql
+node_hwmon_power_watt * on(chip,sensor) group_left(label) node_hwmon_sensor_label
+```
+
+The [native hwmon scraper](https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/50396) reads labels alongside readings and will populate both attributes directly. Every transform above is scoped to the `node_hwmon_temp_*` names, so native `hw.temperature` will pass through untouched when it arrives.
 
 Dropping `service.name` costs the `job` label on host metrics. That's deliberate -- OpenTelemetry has no infrastructure equivalent, and the maintainers would rather the mapping gain a fallback than have hosts borrow `service.*` ([contrib#46207](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/46207)). Expect imported dashboards to need adjusting.
 
