@@ -233,8 +233,11 @@ Use the **contrib** distribution; the base build lacks the `host_metrics` receiv
 COLLECTOR=<workstation-address>
 VERSION=0.159.0
 DEB=otelcol-contrib_${VERSION}_linux_amd64.deb
+URL=https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$VERSION
 
-ssh root@$NODE "cd /tmp && wget -q https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$VERSION/$DEB && dpkg -i $DEB && rm $DEB"
+ssh root@$NODE "cd /tmp && wget -q $URL/$DEB $URL/$DEB.sha256 && \
+    echo \"\$(cat $DEB.sha256)  $DEB\" | sha256sum -c - && \
+    dpkg -i $DEB && rm $DEB $DEB.sha256"
 
 scp config/node/otel-collector.yaml root@$NODE:/etc/otelcol-contrib/config.yaml
 
