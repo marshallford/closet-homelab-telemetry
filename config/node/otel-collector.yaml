@@ -76,13 +76,41 @@ processors:
     timeout: 10s
     send_batch_size: 1024
 
+extensions:
+  # Backs the sending queue. StateDirectory= in the systemd drop-in creates
+  # the directory and exports the path. Real disk, not tmpfs.
+  file_storage:
+    directory: "${env:STATE_DIRECTORY}"
+    create_directory: true
+    # bbolt never shrinks on its own; rebound compaction reclaims what a
+    # drained backlog leaves behind.
+    compaction:
+      on_rebound: true
+      directory: "${env:STATE_DIRECTORY}"
+
 exporters:
   otlp_grpc:
     endpoint: "${env:COLLECTOR_ENDPOINT}"
     tls:
       insecure: true
+    # The queue holds data while the central collector is unreachable; keeping
+    # it on disk means a restart of this collector does not discard it.
+    sending_queue:
+      storage: file_storage
+      # A disk budget, not a batch count: batches buy fewer hours as
+      # cardinality grows. 512 MiB. out_of_order_time_window in
+      # config/workstation/prometheus.yaml is the real ceiling.
+      sizer: bytes
+      queue_size: 536_870_912
+    # Retry forever, so queue_size is what bounds the backlog. Any time limit
+    # would discard batches still held on disk once it expired.
+    retry_on_failure:
+      max_elapsed_time: 0
 
 service:
+  extensions:
+  - file_storage
+
   # Push the collector's own metrics down the same path as everything else,
   # rather than exposing :8888 for something to scrape.
   telemetry:

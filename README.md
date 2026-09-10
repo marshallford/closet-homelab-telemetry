@@ -292,13 +292,13 @@ On the workstation, `make down` stops the stack but keeps the Prometheus and Gra
 make purge
 ```
 
-On each node, `apt-get purge` rather than `remove`, so the configs under `/etc` go too. The systemd drop-ins and the endpoint env file belong to no package and must be deleted by hand.
+On each node, `apt-get purge` rather than `remove`, so the configs under `/etc` go too. The systemd drop-ins, the endpoint env file and the queue directory belong to no package and must be deleted by hand.
 
 ```shell
 ssh root@$NODE "apt-get purge -y otelcol-contrib prometheus-node-exporter && \
     rm -rf /etc/systemd/system/otelcol-contrib.service.d \
     /etc/systemd/system/prometheus-node-exporter.service.d \
-    /etc/otelcol-contrib && \
+    /etc/otelcol-contrib /var/lib/otelcol-contrib && \
     systemctl daemon-reload"
 ```
 

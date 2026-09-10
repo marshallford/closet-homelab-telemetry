@@ -88,6 +88,14 @@ exporters:
     endpoint: http://prometheus:9090/api/v1/write
     resource_to_telemetry_conversion:
       enabled: true
+    # Sized to absorb a node collector draining its queue in a burst. Memory
+    # only: a wal would need a root init container to chown the volume, and
+    # Prometheus running beside this collector makes that outage unlikely.
+    remote_write_queue:
+      queue_size: 100_000
+    # Outlast a Prometheus restart, bounded so stuck consumers cannot eat RAM.
+    retry_on_failure:
+      max_elapsed_time: 30m
 
 service:
   # Self-telemetry is emitted by the service layer, not a receiver, so it

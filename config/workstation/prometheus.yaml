@@ -1,2 +1,8 @@
 # Overrides the image default, which scrapes Prometheus itself.
 # No scrape_configs: everything arrives by remote write.
+
+storage:
+  tsdb:
+    # A buffered backlog arrives older than the TSDB head and is refused
+    # without a window. Sized to the longest delivery delay worth accepting.
+    out_of_order_time_window: 24h
