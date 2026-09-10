@@ -28,7 +28,7 @@ services:
     command:
     - '--config.file=/etc/prometheus/prometheus.yaml'
     - '--storage.tsdb.path=/prometheus'
-    - '--storage.tsdb.retention.time=7d'
+    - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}'
     - '--web.enable-remote-write-receiver'
     networks:
     - monitoring

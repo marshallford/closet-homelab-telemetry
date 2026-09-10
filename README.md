@@ -199,6 +199,12 @@ make up
 
 **Prometheus** http://localhost:9090 | **Grafana** http://localhost:3000 (admin/admin)
 
+Prometheus keeps 7 days of metrics by default. `PROMETHEUS_RETENTION` takes any Prometheus duration:
+
+```shell
+make up PROMETHEUS_RETENTION=90d
+```
+
 ### 2. Install Node Exporter on each node
 
 ```shell
