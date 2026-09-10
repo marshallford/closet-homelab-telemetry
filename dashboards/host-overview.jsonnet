@@ -66,12 +66,18 @@ local temperature =
   ])
   + lib.legendTable(['mean', 'max', 'lastNotNull']);
 
-// Temperature alone can't separate a working fan from a lighter workload.
-local degreesPerWatt =
-  lib.ts('Degrees per watt', 'none', [
-    lib.q('max(hw_temperature_celsius{host_name="$host"}) / scalar(max(hw_power_watts{host_name="$host"}))', 'C/W'),
+local powerDraw =
+  lib.ts('Power by sensor', 'watt', [
+    lib.q('max by (hw_id) (hw_power_watts{host_name="$host"})', '{{hw_id}}'),
   ])
   + lib.legendTable(['mean', 'max', 'lastNotNull'], placement='bottom');
+
+local cpuFrequency =
+  lib.ts('CPU frequency', 'hertz', [
+    lib.q('avg(node_cpu_scaling_frequency_hertz{host_name="$host"})', 'avg'),
+    lib.q('max(node_cpu_scaling_frequency_hertz{host_name="$host"})', 'max'),
+  ])
+  + lib.legendTable(['mean', 'min', 'max'], placement='bottom');
 
 local diskIO =
   lib.ts('Disk I/O', 'Bps', [
@@ -111,7 +117,7 @@ g.dashboard.new('Host Overview')
     + g.panel.row.withPanels([cpuTime, memory, loadAverage]),
 
     g.panel.row.new('Thermal')
-    + g.panel.row.withPanels([temperature, degreesPerWatt]),
+    + g.panel.row.withPanels([temperature, powerDraw, cpuFrequency]),
 
     g.panel.row.new('Storage and network')
     + g.panel.row.withPanels([diskIO, filesystem, networkIO]),

@@ -2,71 +2,156 @@
 # Average a window either side of a change and print the difference.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
-
+: "${PROMETHEUS_URL:=http://localhost:9090}"
 : "${GRAFANA_URL:=http://localhost:3000}"
 : "${GRAFANA_AUTH:=admin:admin}"
-: "${PROMETHEUS_URL:=http://localhost:9090}"
 : "${ANNOTATION_TAG:=fan}"
 : "${COMPARE_WINDOW:=3}"
 : "${COMPARE_SETTLE:=0}"
 : "${COMPARE_AT:=}"
 : "${COMPARE_HOST:=}"
+: "${COMPARE_SENSOR:=}"
+: "${COMPARE_POWER:=}"
+
+die() {
+  echo "${0##*/}: $*" >&2
+  exit 1
+}
+
+indent() { sed 's/^/  /'; }
+
+# Auto when there is only one, named otherwise. Picking the first of several
+# would quietly measure the wrong thing, so anything ambiguous stops and lists
+# what it could have meant.
+choose() { # variable name, current value, newline-separated options
+  local var=$1 want=$2 opts=$3
+  if [ -z "$want" ]; then
+    [ "$(grep -c . <<< "$opts")" -eq 1 ] || die "set $var to one of:
+$(indent <<< "$opts")"
+    printf '%s' "$opts"
+    return
+  fi
+  grep -qxF -- "$want" <<< "$opts" || die "no $var matching $want. Options:
+$(indent <<< "$opts")"
+  printf '%s' "$want"
+}
+
+# Prometheus answers 200 with status "success" for a query that matched
+# nothing, so a transport failure, a rejected query and an empty result have to
+# be told apart deliberately. -f is absent on purpose: a 400 carries the reason
+# for the rejection in its body.
+prom() {
+  local body
+  body=$(curl -sg --max-time 15 "$PROMETHEUS_URL/api/v1/query" \
+    --data-urlencode "query=$1" --data-urlencode "time=$2") ||
+    die "cannot reach Prometheus at $PROMETHEUS_URL"
+  jq -e '.status == "success"' <<< "$body" > /dev/null ||
+    die "Prometheus rejected a query: $(jq -r '.error // "no reason given"' <<< "$body")"
+  printf '%s' "$body"
+}
+
+# One value, or nothing. Absence prints an empty string rather than a zero: a
+# missing sensor and a sensor reading zero are different answers, and only one
+# of them is a measurement.
+value() {
+  prom "$1" "$2" | jq -r '.data.result[0].value[1] // empty'
+}
+
+# The hw.id of every sensor this metric had in the before window. max by
+# (hw.id) collapses duplicate series, which a collector restart can leave
+# inside the lookback.
+sensors() {
+  prom "max by (hw_id) (avg_over_time(${1}${sel}[$w]))" "$at" |
+    jq -r '.data.result[].metric.hw_id // empty'
+}
 
 # The change being measured is the one that was annotated, so default to the
 # most recent mark rather than asking for the time twice.
 if [ -z "$COMPARE_AT" ]; then
   ms=$(curl -sfg -u "$GRAFANA_AUTH" --get --data-urlencode "tags=$ANNOTATION_TAG" \
-    "$GRAFANA_URL/api/annotations" | jq -r 'max_by(.time).time // 0')
-  [ "$ms" != 0 ] || { echo "no annotation tagged $ANNOTATION_TAG; set COMPARE_AT" >&2; exit 1; }
+    "$GRAFANA_URL/api/annotations" | jq -r 'max_by(.time).time // 0') ||
+    die "cannot read annotations from $GRAFANA_URL"
+  [ "$ms" != 0 ] || die "no annotation tagged $ANNOTATION_TAG; set COMPARE_AT"
   COMPARE_AT="@$((ms / 1000))"
 fi
-at=$(date -d "$COMPARE_AT" +%s)
+at=$(date -d "$COMPARE_AT" +%s) || die "cannot parse COMPARE_AT=$COMPARE_AT"
+
+# A PromQL duration is an integer and a unit, so the window is whole hours.
+# COMPARE_SETTLE only shifts a timestamp, so it can be fractional.
+case $COMPARE_WINDOW in
+  '' | *[!0-9]* | 0) die "COMPARE_WINDOW must be a whole number of hours, not $COMPARE_WINDOW" ;;
+esac
+w="${COMPARE_WINDOW}h"
+begin=$((at - COMPARE_WINDOW * 3600))
 after=$(awk -v a="$at" -v w="$COMPARE_WINDOW" -v s="$COMPARE_SETTLE" \
   'BEGIN { printf "%d", a + (w + s) * 3600 }')
-
-if [ -z "$COMPARE_HOST" ]; then
-  COMPARE_HOST=$(curl -sfg "$PROMETHEUS_URL/api/v1/label/host_name/values" | jq -r '.data[0]')
-fi
-sel="{host_name=\"$COMPARE_HOST\"}"
-w="${COMPARE_WINDOW}h"
-
-query() {
-  curl -sfg "$PROMETHEUS_URL/api/v1/query" \
-    --data-urlencode "query=$1" --data-urlencode "time=$2" \
-    | jq -r '.data.result[0].value[1] // "0"'
-}
 
 [ "$after" -le "$(date +%s)" ] ||
   echo "warning: the after window ends $(date -d "@$after" '+%H:%M'), which has not happened yet" >&2
 
+# Scoped to the window being compared, so a machine that reported last week but
+# is gone now does not count as a second host.
+hosts=$(curl -sfg --get --max-time 15 "$PROMETHEUS_URL/api/v1/label/host_name/values" \
+  --data-urlencode "match[]=system_uptime_seconds" \
+  --data-urlencode "start=$begin" --data-urlencode "end=$after" \
+  | jq -r '.data[]?') || die "cannot reach Prometheus at $PROMETHEUS_URL"
+COMPARE_HOST=$(choose COMPARE_HOST "$COMPARE_HOST" "$hosts")
+sel="{host_name=\"$COMPARE_HOST\"}"
+
 # A window with a hole in it still averages, just over less than you asked
 # for. Comparing the two counts catches that without assuming an interval.
-nb=$(query "count_over_time(system_uptime_seconds${sel}[$w])" "$at")
-na=$(query "count_over_time(system_uptime_seconds${sel}[$w])" "$after")
+nb=$(value "count_over_time(system_uptime_seconds${sel}[$w])" "$at")
+na=$(value "count_over_time(system_uptime_seconds${sel}[$w])" "$after")
+[ -n "$nb" ] || die "no samples for $COMPARE_HOST in the $w before $(date -d "@$at" '+%Y-%m-%d %H:%M')"
+[ -n "$na" ] || die "no samples for $COMPARE_HOST in the $w ending $(date -d "@$after" '+%Y-%m-%d %H:%M')"
 awk -v b="$nb" -v a="$na" 'BEGIN {
   m = (b > a ? b : a)
   if (m == 0 || (m - (b < a ? b : a)) / m > 0.1)
     printf "warning: uneven coverage, %d samples before and %d after\n", b, a
 }' >&2
 
-printf '%s, %s before %s and %s ending %s (%s/%s samples)\n\n' \
+# Named, not guessed, so both windows describe the same piece of hardware.
+COMPARE_SENSOR=$(choose COMPARE_SENSOR "$COMPARE_SENSOR" "$(sensors hw_temperature_celsius)")
+
+# A host with no power sensor still gets a temperature and a CPU reading.
+powers=$(sensors hw_power_watts)
+[ -z "$powers" ] || COMPARE_POWER=$(choose COMPARE_POWER "$COMPARE_POWER" "$powers")
+
+reading() { # metric, hw.id, time
+  value "max(avg_over_time(${1}{host_name=\"$COMPARE_HOST\", hw_id=\"$2\"}[$w]))" "$3"
+}
+
+tb=$(reading hw_temperature_celsius "$COMPARE_SENSOR" "$at")
+ta=$(reading hw_temperature_celsius "$COMPARE_SENSOR" "$after")
+[ -n "$tb" ] || die "sensor $COMPARE_SENSOR has no readings in the before window"
+
+if [ -n "$COMPARE_POWER" ]; then
+  pb=$(reading hw_power_watts "$COMPARE_POWER" "$at")
+  pa=$(reading hw_power_watts "$COMPARE_POWER" "$after")
+fi
+
+# Power and CPU are controls: a temperature drop only means something if the
+# machine was doing comparable work on both sides.
+cpu="1 - (sum(rate(system_cpu_time_seconds_total{host_name=\"$COMPARE_HOST\", state=\"idle\"}[$w])) / scalar(max(system_cpu_logical_count$sel)))"
+cb=$(value "$cpu" "$at")
+ca=$(value "$cpu" "$after")
+
+row() {
+  printf '%-26s' "$1"
+  if [ -n "$2" ] && [ -n "$3" ]; then
+    awk -v b="$2" -v a="$3" 'BEGIN { printf " %9.2f %9.2f %+9.2f\n", b, a, a - b }'
+  else
+    printf ' %9s %9s %9s\n' "${2:--}" "${3:--}" -
+  fi
+}
+
+printf '%s, %s before %s vs %s ending %s (%s/%s samples)\n' \
   "$COMPARE_HOST" "$w" "$(date -d "@$at" '+%Y-%m-%d %H:%M')" \
   "$w" "$(date -d "@$after" '+%H:%M')" "$nb" "$na"
-printf '%-18s %10s %10s %10s\n' metric before after delta
+printf 'sensor %s\n' "${COMPARE_SENSOR#hwmon/}"
+[ -z "$COMPARE_POWER" ] || printf 'power  %s\n' "${COMPARE_POWER#hwmon/}"
 
-# Averaging each series over raw samples, then aggregating, avoids a subquery
-# whose resolution would silently shift the answer. Power and CPU are
-# controls: a temperature drop only means something if the machine was doing
-# comparable work on both sides.
-while IFS='|' read -r label expr; do
-  b=$(query "$expr" "$at")
-  a=$(query "$expr" "$after")
-  awk -v l="$label" -v b="$b" -v a="$a" \
-    'BEGIN { printf "%-18s %10.2f %10.2f %+10.2f\n", l, b, a, a - b }'
-done <<EOF
-hottest (C)|max(avg_over_time(hw_temperature_celsius${sel}[$w]))
-degrees per watt|max(avg_over_time(hw_temperature_celsius${sel}[$w])) / scalar(max(avg_over_time(hw_power_watts${sel}[$w])))
-package (W)|max(avg_over_time(hw_power_watts${sel}[$w]))
-cpu busy|1 - (sum(rate(system_cpu_time_seconds_total{host_name="$COMPARE_HOST", state="idle"}[$w])) / scalar(max(system_cpu_logical_count$sel)))
-EOF
+printf '\n%-26s %9s %9s %9s\n' metric before after delta
+row 'temperature (C)' "$tb" "$ta"
+[ -z "$COMPARE_POWER" ] || row 'power (W)' "${pb:-}" "${pa:-}"
+row 'cpu busy' "$cb" "$ca"

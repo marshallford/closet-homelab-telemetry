@@ -171,21 +171,22 @@ make annotate ANNOTATION="both fans at the switch" \
     ANNOTATION_AT="14:00" ANNOTATION_UNTIL="16:30"
 ```
 
-`make compare` takes a window of time before the mark and a window after it, averages four metrics across each, and prints both sides with the difference:
+`make compare` takes a window of time before the mark and a window after it, averages three metrics across each, and prints both sides with the difference:
 
-- **hottest (C)** -- the warmest hwmon sensor on the host
-- **degrees per watt** -- that sensor divided by package power
-- **package (W)** -- what the CPU package is drawing
+- **temperature (C)** -- the sensor named by `COMPARE_SENSOR`
+- **power (W)** -- the host's power sensor, or the one named by `COMPARE_POWER`
 - **cpu busy** -- the share of CPU time that isn't idle
 
-Every value is a mean over the raw samples in that window, and the sample counts in the header say how complete each window was. The last two are controls rather than results: a temperature drop only means something if the machine was doing comparable work on both sides.
+`COMPARE_HOST`, `COMPARE_SENSOR` and `COMPARE_POWER` are each chosen for you when the host has only one, and have to be named otherwise. Run without one to list the options. The sensor is read in both windows, so the two columns always describe the same hardware:
 
 ```shell
-make compare                     # 3h either side of the latest annotation
-make compare COMPARE_SETTLE=0.5  # skip 30 minutes of settling after the change
+make compare COMPARE_SENSOR=hwmon/pci0000:00_0000:00:18_3/temp1
+make compare COMPARE_SENSOR=... COMPARE_SETTLE=0.5  # skip 30 minutes of settling
 ```
 
-`COMPARE_SETTLE` pushes the after window later, so a transient is measured as neither state. Run it once before changing anything -- two untouched windows still differ, and that difference is the bar the fans have to clear. It warns when a window has a gap in it.
+Windows are whole hours. Power and CPU are controls: a temperature drop only counts if both held still, or the machine was just doing less work.
+
+`COMPARE_SETTLE` starts the after window later, so a temperature still on its way down is not measured as the new one. Run it once before changing anything -- two untouched windows still differ, and that gap is the bar to clear. Alternate rather than measuring once: off, medium, off, medium.
 
 ## Setup
 
