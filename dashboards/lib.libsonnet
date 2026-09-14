@@ -56,16 +56,21 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-v13.0.0/main.libson
     + g.panel.timeSeries.options.legend.withPlacement(placement)
     + g.panel.timeSeries.options.legend.withCalcs(calcs),
 
-  // Surfaces manually-added annotations carrying a tag, so an intervention
-  // can be marked on every panel at once. Hidden means no toggle to switch
-  // it off, not that the markers are hidden.
-  annotationsByTag(name, tag, colour):: {
+  // Marks a change across every panel. hide is the toggle, not the
+  // markers. matchAny false requires every tag listed but tolerates extras,
+  // so a layer can select on a subset of what a mark carries.
+  annotationsByTag(name, tags, color):: {
     datasource: { type: 'grafana', uid: '-- Grafana --' },
     enable: true,
     hide: true,
-    iconColor: colour,
+    iconColor: color,
     name: name,
-    target: { type: 'tags', tags: [tag], limit: 100, matchAny: false },
+    target: {
+      type: 'tags',
+      tags: tags,
+      limit: 100,
+      matchAny: false,
+    },
   },
 
   // A single host picker, driven by whichever metric the dashboard is about.

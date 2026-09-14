@@ -70,7 +70,7 @@ local powerDraw =
   lib.ts('Power by sensor', 'watt', [
     lib.q(
       'max by (chip, sensor) (node_hwmon_power_watt{host_name="$host"})'
-      + ' * on(chip, sensor) group_left(label) node_hwmon_sensor_label',
+      + ' * on(chip, sensor) group_left(label) node_hwmon_sensor_label{host_name="$host"}',
       '{{label}}'
     ),
   ])
@@ -107,8 +107,8 @@ g.dashboard.new('Host Overview')
 + g.dashboard.time.withFrom('now-6h')
 + g.dashboard.withVariables([lib.hostVariable('system_uptime_seconds')])
 + g.dashboard.withAnnotations([
-  lib.annotationsByTag('Door', 'door', 'blue'),
-  lib.annotationsByTag('Fan', 'fan', 'orange'),
+  lib.annotationsByTag('Fans on', ['fan', 'state:on'], 'blue'),
+  lib.annotationsByTag('Fans off', ['fan', 'state:off'], 'orange'),
 ])
 + g.dashboard.withPanels(
   local overview = g.util.grid.makeGrid([

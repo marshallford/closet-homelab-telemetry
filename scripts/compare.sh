@@ -6,8 +6,8 @@ set -euo pipefail
 : "${GRAFANA_URL:=http://localhost:3000}"
 : "${GRAFANA_AUTH:=admin:admin}"
 : "${ANNOTATION_TAG:=fan}"
-: "${COMPARE_WINDOW:=3}"
-: "${COMPARE_SETTLE:=0}"
+: "${COMPARE_WINDOW:=1}"
+: "${COMPARE_SETTLE:=0.5}"
 : "${COMPARE_AT:=}"
 : "${COMPARE_HOST:=}"
 : "${COMPARE_SENSOR:=}"
@@ -18,7 +18,7 @@ die() {
   exit 1
 }
 
-indent() { sed 's/^/  /'; }
+indent() { awk '{ print "  " $0 }'; }
 
 # Auto when there is only one, named otherwise. Picking the first of several
 # would quietly measure the wrong thing, so anything ambiguous stops and lists
@@ -105,8 +105,8 @@ hosts=$(curl -sfg --get --max-time 15 "$PROMETHEUS_URL/api/v1/label/host_name/va
 COMPARE_HOST=$(choose COMPARE_HOST "$COMPARE_HOST" "$hosts")
 sel="{host_name=\"$COMPARE_HOST\"}"
 
-# A window with a hole in it still averages, just over less than you asked
-# for. Comparing the two counts catches that without assuming an interval.
+# A window with a hole in it still averages, over fewer samples than asked for.
+# Comparing the two counts catches that without assuming a scrape interval.
 nb=$(value "count_over_time(system_uptime_seconds${sel}[$w])" "$at")
 na=$(value "count_over_time(system_uptime_seconds${sel}[$w])" "$after")
 [ -n "$nb" ] || die "no samples for $COMPARE_HOST in the $w before $(date -d "@$at" '+%Y-%m-%d %H:%M')"
